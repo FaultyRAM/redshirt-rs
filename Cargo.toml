@@ -10,9 +10,13 @@ keywords = ["obfuscation", "deobfuscation", "uplink"]
 categories = ["cryptography"]
 license = "Apache-2.0 OR MIT"
 
+[dependencies]
+ring = { version = "^0.16.0", optional = true }
+
 [features]
-default = ["redshirt1"]
+default = ["redshirt1", "redshirt2"]
 redshirt1 = []
+redshirt2 = ["ring"]
 
 [profile.release]
 lto = true

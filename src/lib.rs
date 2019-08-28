@@ -24,7 +24,7 @@
     clippy::pedantic
 )]
 
-#[cfg(feature = "redshirt1")]
+#[cfg(any(feature = "redshirt1", feature = "redshirt2"))]
 macro_rules! array {
     ($len:expr) => {
         array!(_, $len)
@@ -34,11 +34,13 @@ macro_rules! array {
     };
 }
 
-#[cfg(feature = "redshirt1")]
+#[cfg(any(feature = "redshirt1", feature = "redshirt2"))]
 mod cursor;
-#[cfg(feature = "redshirt1")]
+#[cfg(any(feature = "redshirt1", feature = "redshirt2"))]
 mod error;
-#[cfg(feature = "redshirt1")]
+#[cfg(any(feature = "redshirt1", feature = "redshirt2"))]
 pub use error::Error;
 #[cfg(feature = "redshirt1")]
 pub mod v1;
+#[cfg(feature = "redshirt2")]
+pub mod v2;
