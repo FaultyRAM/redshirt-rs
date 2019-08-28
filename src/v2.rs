@@ -7,11 +7,11 @@
 
 //! Redshirt 2 utilities.
 
-use crate::{cursor::Cursor, error::Error};
+use crate::{cursor::Cursor, error::Error, xor_bytes};
 use ring::digest::{Context, SHA1_FOR_LEGACY_USE_ONLY as SHA1, SHA1_OUTPUT_LEN};
 use std::{
     fmt::{self, Debug, Formatter},
-    io::{self, Read, Seek, SeekFrom},
+    io::{self, Read, Seek, SeekFrom, Write},
     mem,
 };
 
@@ -22,6 +22,12 @@ const HEADER_LEN: usize = MARKER_LEN + SHA1_OUTPUT_LEN;
 #[derive(Debug)]
 /// Reads Redshirt 2-protected data from an input stream.
 pub struct Reader<R>(Cursor<R>);
+
+/// Writes Redshirt 2-protected data to an output stream.
+pub struct Writer<W: Seek + Write> {
+    dst: Option<Cursor<W>>,
+    checksum: ChecksumBuilder,
+}
 
 #[derive(Clone)]
 struct ChecksumBuilder(Context);
@@ -91,6 +97,84 @@ impl<R: Seek> Seek for Reader<R> {
     }
 }
 
+impl<W: Seek + Write> Writer<W> {
+    #[inline]
+    /// Creates a new writer from an existing output stream.
+    pub fn new(mut dst: W) -> Result<Self, Error> {
+        let mut dummy_header = array!(HEADER_LEN);
+        dummy_header[..MARKER_LEN].copy_from_slice(&MARKER);
+        dst.write_all(&dummy_header)
+            .map(|_| Self {
+                dst: Some(Cursor::new(dst)),
+                checksum: ChecksumBuilder::new(),
+            })
+            .map_err(Error::Io)
+    }
+
+    #[inline]
+    /// Writes out the SHA-1 hash of all previously encoded data, then unwraps the `Writer`.
+    pub fn into_inner(mut self) -> Result<W, Error> {
+        self.write_digest().map(Option::unwrap)
+    }
+
+    #[inline]
+    fn write_digest(&mut self) -> Result<Option<W>, Error> {
+        if let Some(mut dst) = self.dst.take() {
+            let offset = dst.offset();
+            dst.inner_mut()
+                .seek(SeekFrom::Start(MARKER_LEN as u64))
+                .and_then(|_| {
+                    let digest = self.checksum.clone().finish();
+                    let res = dst.inner_mut().write_all(&digest);
+                    let _ = dst.seek(SeekFrom::Start(offset)).unwrap();
+                    res
+                })
+                .map(|_| Some(dst.into_inner()))
+                .map_err(Error::Io)
+        } else {
+            Ok(None)
+        }
+    }
+}
+
+impl<W: Debug + Seek + Write> Debug for Writer<W> {
+    #[inline]
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        let digest = self.checksum.clone().finish();
+        f.debug_struct("Writer")
+            .field("dst", &self.dst)
+            .field("digest", &digest)
+            .finish()
+    }
+}
+
+impl<W: Seek + Write> Write for Writer<W> {
+    #[inline]
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        let mut buffer = array!(16384);
+        let used = &mut buffer[..buf.len()];
+        used.copy_from_slice(buf);
+        xor_bytes(used);
+        let dst = self.dst.as_mut().unwrap();
+        dst.write_direct(used).map(|len| {
+            self.checksum.update(&used[..len]);
+            len
+        })
+    }
+
+    #[inline]
+    fn flush(&mut self) -> io::Result<()> {
+        self.dst.as_mut().unwrap().flush()
+    }
+}
+
+impl<W: Seek + Write> Drop for Writer<W> {
+    #[inline]
+    fn drop(&mut self) {
+        let _ = self.write_digest().unwrap();
+    }
+}
+
 impl ChecksumBuilder {
     pub(self) fn new() -> Self {
         Self(Context::new(&SHA1))
@@ -126,8 +210,8 @@ impl Default for ChecksumBuilder {
 
 #[cfg(test)]
 mod tests {
-    use super::Reader;
-    use std::io::{Cursor, Read, Seek, SeekFrom};
+    use super::{Reader, Writer, HEADER_LEN};
+    use std::io::{Cursor, Read, Seek, SeekFrom, Write};
 
     const MSG_DEC: &[u8] = b"Hello world!";
     const MSG_ENC: &[u8] = b"REDSHRT2\x00\x34\x54\x26\x2B\x4A\xBF\x29\x1D\x0B\x8E\x60\xD9\xA1\x76\xE1\x14\x7D\xDF\x05\xD4\xC8\xE5\xEC\xEC\xEF\xA0\xF7\xEF\xF2\xEC\xE4\xA1";
@@ -210,5 +294,16 @@ mod tests {
     fn reader_seek_negative_overflow() {
         let mut reader = Reader::new(Cursor::new(MSG_ENC)).unwrap();
         let _ = reader.seek(SeekFrom::Current(-1)).unwrap();
+    }
+
+    #[test]
+    fn writer_write() {
+        let mut buffer = array!(HEADER_LEN + MSG_LEN);
+        {
+            let mut writer = Writer::new(Cursor::new(&mut buffer[..])).unwrap();
+            writer.write_all(MSG_DEC).unwrap();
+            let _ = writer.into_inner().unwrap();
+        }
+        assert_eq!(&buffer[..], &MSG_ENC[..]);
     }
 }

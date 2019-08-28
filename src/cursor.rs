@@ -5,17 +5,11 @@
 // <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your option. This file may not be copied,
 // modified, or distributed except according to those terms.
 
+use crate::xor_bytes;
 use std::{
     convert::TryFrom,
     io::{self, Read, Seek, SeekFrom, Write},
 };
-
-#[inline]
-fn xor_bytes(bytes: &mut [u8]) {
-    for n in bytes {
-        *n ^= 0b1000_0000;
-    }
-}
 
 #[derive(Debug)]
 pub(crate) struct Cursor<T> {
@@ -35,8 +29,31 @@ impl<T> Cursor<T> {
     }
 
     #[inline]
+    pub(crate) const fn offset(&self) -> u64 {
+        self.offset
+    }
+
+    #[inline]
+    pub(crate) fn inner_mut(&mut self) -> &mut T {
+        &mut self.inner
+    }
+
+    #[inline]
     pub(crate) fn into_inner(self) -> T {
         self.inner
+    }
+}
+
+impl<T: Write> Cursor<T> {
+    #[inline]
+    pub(crate) fn write_direct(&mut self, buf: &[u8]) -> io::Result<usize> {
+        match self.inner.write(buf) {
+            Ok(len) => {
+                self.offset += u64::try_from(len).unwrap();
+                Ok(len)
+            }
+            Err(e) => Err(e),
+        }
     }
 }
 
@@ -112,10 +129,7 @@ impl<T: Write> Write for Cursor<T> {
             let used = &mut temp[..chunk.len()];
             used.copy_from_slice(chunk);
             xor_bytes(used);
-            self.inner.write(used).map(|len| {
-                self.offset += u64::try_from(len).unwrap();
-                len
-            })
+            self.write_direct(used)
         } else {
             Ok(0)
         }

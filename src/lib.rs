@@ -34,6 +34,13 @@ macro_rules! array {
     };
 }
 
+#[inline]
+pub(crate) fn xor_bytes(bytes: &mut [u8]) {
+    for n in bytes {
+        *n ^= 0b1000_0000;
+    }
+}
+
 #[cfg(any(feature = "redshirt1", feature = "redshirt2"))]
 mod cursor;
 #[cfg(any(feature = "redshirt1", feature = "redshirt2"))]
