@@ -23,3 +23,22 @@
     clippy::all,
     clippy::pedantic
 )]
+
+#[cfg(feature = "redshirt1")]
+macro_rules! array {
+    ($len:expr) => {
+        array!(_, $len)
+    };
+    ($tyname:ty, $len:expr) => {
+        [<$tyname>::default(); $len]
+    };
+}
+
+#[cfg(feature = "redshirt1")]
+mod cursor;
+#[cfg(feature = "redshirt1")]
+mod error;
+#[cfg(feature = "redshirt1")]
+pub use error::Error;
+#[cfg(feature = "redshirt1")]
+pub mod v1;

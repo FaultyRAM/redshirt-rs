@@ -10,6 +10,10 @@ keywords = ["obfuscation", "deobfuscation", "uplink"]
 categories = ["cryptography"]
 license = "Apache-2.0 OR MIT"
 
+[features]
+default = ["redshirt1"]
+redshirt1 = []
+
 [profile.release]
 lto = true
 codegen-units = 1
