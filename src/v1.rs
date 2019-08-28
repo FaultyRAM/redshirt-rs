@@ -8,7 +8,7 @@
 //! Redshirt 1 utilities.
 
 use crate::{cursor::Cursor, error::Error};
-use std::io::{self, Read, Seek, SeekFrom};
+use std::io::{self, Read, Seek, SeekFrom, Write};
 
 const MARKER: [u8; MARKER_LEN] = *b"REDSHIRT\x00";
 const MARKER_LEN: usize = 9;
@@ -16,6 +16,10 @@ const MARKER_LEN: usize = 9;
 #[derive(Debug)]
 /// Reads Redshirt 1-protected data from an input stream.
 pub struct Reader<R>(Cursor<R>);
+
+#[derive(Debug)]
+/// Writes Redshirt 1-protected data to an output stream.
+pub struct Writer<W>(Cursor<W>);
 
 impl<R: Read> Reader<R> {
     #[inline]
@@ -54,10 +58,45 @@ impl<R: Seek> Seek for Reader<R> {
     }
 }
 
+impl<W: Write> Writer<W> {
+    #[inline]
+    /// Creates a new writer from an existing output stream.
+    pub fn new(mut dst: W) -> Result<Self, Error> {
+        dst.write_all(&MARKER)
+            .map(|_| Self(Cursor::new(dst)))
+            .map_err(Error::Io)
+    }
+
+    #[inline]
+    /// Unwraps a `Writer`, returning its underlying writer.
+    pub fn into_inner(self) -> W {
+        self.0.into_inner()
+    }
+}
+
+impl<W: Write> Write for Writer<W> {
+    #[inline]
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.0.write(buf)
+    }
+
+    #[inline]
+    fn flush(&mut self) -> io::Result<()> {
+        self.0.flush()
+    }
+}
+
+impl<W: Seek> Seek for Writer<W> {
+    #[inline]
+    fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
+        self.0.seek(pos)
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::Reader;
-    use std::io::{Cursor, Read, Seek, SeekFrom};
+    use super::{Reader, Writer, MARKER_LEN};
+    use std::io::{Cursor, Read, Seek, SeekFrom, Write};
 
     const MSG_DEC: &[u8] = b"Hello world!";
     const MSG_ENC: &[u8] = b"REDSHIRT\x00\xC8\xE5\xEC\xEC\xEF\xA0\xF7\xEF\xF2\xEC\xE4\xA1";
@@ -140,5 +179,87 @@ mod tests {
     fn reader_seek_negative_overflow() {
         let mut reader = Reader::new(Cursor::new(MSG_ENC)).unwrap();
         let _ = reader.seek(SeekFrom::Current(-1)).unwrap();
+    }
+
+    #[test]
+    fn writer_write() {
+        let mut buffer = array!(MARKER_LEN + MSG_LEN);
+        let mut writer = Writer::new(Cursor::new(&mut buffer[..])).unwrap();
+        let (left, right) = MSG_DEC.split_at(MSG_LEN / 2);
+        assert_eq!(
+            writer.seek(SeekFrom::Current(MSG_LEN_I64 / 2)).unwrap(),
+            MSG_LEN_U64 / 2
+        );
+        writer.write_all(right).unwrap();
+        assert_eq!(writer.seek(SeekFrom::Current(-MSG_LEN_I64)).unwrap(), 0);
+        writer.write_all(left).unwrap();
+        assert_eq!(buffer, MSG_ENC);
+    }
+
+    #[test]
+    fn writer_seek_start() {
+        let mut buffer = array!(MARKER_LEN + MSG_LEN);
+        let mut writer = Writer::new(Cursor::new(&mut buffer[..])).unwrap();
+        assert_eq!(writer.seek(SeekFrom::Start(0)).unwrap(), 0);
+        assert_eq!(
+            writer.seek(SeekFrom::Start(MSG_LEN_U64)).unwrap(),
+            MSG_LEN_U64
+        );
+        assert_eq!(writer.seek(SeekFrom::Start(0)).unwrap(), 0);
+        assert_eq!(
+            writer.seek(SeekFrom::Start(MSG_LEN_U64 / 2)).unwrap(),
+            MSG_LEN_U64 / 2
+        );
+        assert_eq!(writer.seek(SeekFrom::Start(0)).unwrap(), 0);
+    }
+
+    #[test]
+    fn writer_seek_current() {
+        let mut buffer = array!(MARKER_LEN + MSG_LEN);
+        let mut writer = Writer::new(Cursor::new(&mut buffer[..])).unwrap();
+        assert_eq!(writer.seek(SeekFrom::Current(0)).unwrap(), 0);
+        assert_eq!(
+            writer.seek(SeekFrom::Current(MSG_LEN_I64)).unwrap(),
+            MSG_LEN_U64
+        );
+        assert_eq!(writer.seek(SeekFrom::Current(-MSG_LEN_I64)).unwrap(), 0);
+        assert_eq!(
+            writer.seek(SeekFrom::Current(MSG_LEN_I64 / 2)).unwrap(),
+            MSG_LEN_U64 / 2
+        );
+        assert_eq!(
+            writer.seek(SeekFrom::Current(-(MSG_LEN_I64 / 2))).unwrap(),
+            0
+        );
+    }
+
+    #[test]
+    fn writer_seek_end() {
+        let mut buffer = array!(MARKER_LEN + MSG_LEN);
+        let mut writer = Writer::new(Cursor::new(&mut buffer[..])).unwrap();
+        assert_eq!(writer.seek(SeekFrom::End(-MSG_LEN_I64)).unwrap(), 0);
+        assert_eq!(writer.seek(SeekFrom::End(0)).unwrap(), MSG_LEN_U64);
+        assert_eq!(writer.seek(SeekFrom::End(-MSG_LEN_I64)).unwrap(), 0);
+        assert_eq!(
+            writer.seek(SeekFrom::End(-MSG_LEN_I64 / 2)).unwrap(),
+            MSG_LEN_U64 / 2
+        );
+        assert_eq!(writer.seek(SeekFrom::End(-MSG_LEN_I64)).unwrap(), 0);
+    }
+
+    #[test]
+    #[should_panic]
+    fn writer_seek_positive_overflow() {
+        let mut buffer = array!(MARKER_LEN + MSG_LEN);
+        let mut writer = Reader::new(Cursor::new(&mut buffer[..])).unwrap();
+        let _ = writer.seek(SeekFrom::Start(u64::max_value())).unwrap();
+    }
+
+    #[test]
+    #[should_panic]
+    fn writer_seek_negative_overflow() {
+        let mut buffer = array!(MARKER_LEN + MSG_LEN);
+        let mut writer = Reader::new(Cursor::new(&mut buffer[..])).unwrap();
+        let _ = writer.seek(SeekFrom::Current(-1)).unwrap();
     }
 }
