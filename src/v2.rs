@@ -6,6 +6,9 @@
 // modified, or distributed except according to those terms.
 
 //! Redshirt 2 utilities.
+//!
+//! This module provides `Reader` and `Writer` types for reading and writing Redshirt 2-encoded
+//! data, respectively.
 
 use crate::{cursor::Cursor, error::Error, xor_bytes};
 use ring::digest::{Context, SHA1_FOR_LEGACY_USE_ONLY as SHA1, SHA1_OUTPUT_LEN};
@@ -35,6 +38,24 @@ struct ChecksumBuilder(Context);
 impl<R: Read + Seek> Reader<R> {
     #[inline]
     /// Creates a new reader from an input stream.
+    ///
+    /// # Errors
+    ///
+    /// Returns an `Err` if any of the following occurs:
+    ///
+    /// * An I/O error occurs;
+    /// * The underlying reader produces an invalid Redshirt 2 header;
+    /// * The SHA-1 hash in the header does not match that of the encoded data.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use redshirt::v2::Reader;
+    /// use std::fs::OpenOptions;
+    ///
+    /// let file = OpenOptions::new().read(true).open("User.usr").unwrap();
+    /// let reader = Reader::new(file).unwrap();
+    /// ```
     pub fn new(mut src: R) -> Result<Self, Error> {
         let mut header_buf = array!(HEADER_LEN);
         src.read_exact(&mut header_buf)
@@ -78,6 +99,17 @@ impl<R: Read + Seek> Reader<R> {
 
     #[inline]
     /// Unwraps a `Reader`, returning its underlying reader.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use redshirt::v2::Reader;
+    /// use std::fs::OpenOptions;
+    ///
+    /// let file = OpenOptions::new().read(true).open("User.usr").unwrap();
+    /// let reader = Reader::new(file).unwrap();
+    /// let inner = reader.into_inner();
+    /// ```
     pub fn into_inner(self) -> R {
         self.0.into_inner()
     }
@@ -99,7 +131,22 @@ impl<R: Seek> Seek for Reader<R> {
 
 impl<W: Seek + Write> Writer<W> {
     #[inline]
-    /// Creates a new writer from an existing output stream.
+    /// Wraps an existing output stream and writes a Redshirt 2 header that is valid, but contains
+    /// an invalid SHA-1 hash.
+    ///
+    /// # Errors
+    ///
+    /// Returns an `Err` if writing the header fails.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use redshirt::v2::Writer;
+    /// use std::io::Cursor;
+    ///
+    /// let mut data = [u8::default(); 30];
+    /// let writer = Writer::new(Cursor::new(&mut data[..])).unwrap();
+    /// ```
     pub fn new(mut dst: W) -> Result<Self, Error> {
         let mut dummy_header = array!(HEADER_LEN);
         dummy_header[..MARKER_LEN].copy_from_slice(&MARKER);
@@ -113,6 +160,24 @@ impl<W: Seek + Write> Writer<W> {
 
     #[inline]
     /// Writes out the SHA-1 hash of all previously encoded data, then unwraps the `Writer`.
+    ///
+    /// If a `Writer` is dropped without calling this method, the SHA-1 hash is written out, but the
+    /// destructor will panic if an error occurs. Calling this method ensures that any such errors
+    /// are safely handled.
+    ///
+    /// # Errors
+    ///
+    /// Returns an `Err` if writing the SHA-1 hash fails.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use redshirt::v2::Writer;
+    /// use std::io::Cursor;
+    ///
+    /// let mut data = [u8::default(); 30];
+    /// let writer = Writer::new(Cursor::new(&mut data[..])).unwrap();
+    /// let inner = writer.into_inner().unwrap();
     pub fn into_inner(mut self) -> Result<W, Error> {
         self.write_digest().map(Option::unwrap)
     }
@@ -170,6 +235,15 @@ impl<W: Seek + Write> Write for Writer<W> {
 
 impl<W: Seek + Write> Drop for Writer<W> {
     #[inline]
+    /// When a `Writer` is dropped, this causes the SHA-1 hash of all previously encoded data to be
+    /// written into the header.
+    ///
+    /// In general, you should use `Writer::into_inner` instead of relying on implict `drop` calls.
+    ///
+    /// # Panics
+    ///
+    /// Panics if writing the SHA-1 hash fails for any reason. To catch these errors, use
+    /// `Writer::into_inner` instead of relying on implicit `drop` calls.
     fn drop(&mut self) {
         let _ = self.write_digest().unwrap();
     }

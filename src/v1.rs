@@ -6,6 +6,9 @@
 // modified, or distributed except according to those terms.
 
 //! Redshirt 1 utilities.
+//!
+//! This module provides `Reader` and `Writer` types for reading and writing Redshirt 1-encoded
+//! data, respectively.
 
 use crate::{cursor::Cursor, error::Error};
 use std::io::{self, Read, Seek, SeekFrom, Write};
@@ -24,6 +27,21 @@ pub struct Writer<W>(Cursor<W>);
 impl<R: Read> Reader<R> {
     #[inline]
     /// Creates a new reader from an existing input stream.
+    ///
+    /// # Errors
+    ///
+    /// Returns an `Err` if an I/O error occurs, or the underlying reader produces an invalid
+    /// Redshirt 1 header.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use redshirt::v1::Reader;
+    /// use std::fs::OpenOptions;
+    ///
+    /// let file = OpenOptions::new().read(true).open("data.dat").unwrap();
+    /// let reader = Reader::new(file).unwrap();
+    /// ```
     pub fn new(mut src: R) -> Result<Self, Error> {
         let mut marker_buf = array!(MARKER_LEN);
         src.read_exact(&mut marker_buf)
@@ -39,6 +57,17 @@ impl<R: Read> Reader<R> {
 
     #[inline]
     /// Unwraps a `Reader`, returning its underlying reader.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use redshirt::v1::Reader;
+    /// use std::fs::OpenOptions;
+    ///
+    /// let file = OpenOptions::new().read(true).open("data.dat").unwrap();
+    /// let reader = Reader::new(file).unwrap();
+    /// let inner = reader.into_inner();
+    /// ```
     pub fn into_inner(self) -> R {
         self.0.into_inner()
     }
@@ -60,7 +89,20 @@ impl<R: Seek> Seek for Reader<R> {
 
 impl<W: Write> Writer<W> {
     #[inline]
-    /// Creates a new writer from an existing output stream.
+    /// Wraps an existing output stream and writes a valid Redshirt 1 header.
+    ///
+    /// # Errors
+    ///
+    /// Returns an `Err` if writing the Redshirt 1 header fails.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use redshirt::v1::Writer;
+    ///
+    /// let mut data = [u8::default(); 10];
+    /// let writer = Writer::new(&mut data[..]).unwrap();
+    /// ```
     pub fn new(mut dst: W) -> Result<Self, Error> {
         dst.write_all(&MARKER)
             .map(|_| Self(Cursor::new(dst)))
@@ -69,6 +111,16 @@ impl<W: Write> Writer<W> {
 
     #[inline]
     /// Unwraps a `Writer`, returning its underlying writer.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use redshirt::v1::Writer;
+    ///
+    /// let mut data = [u8::default(); 10];
+    /// let writer = Writer::new(&mut data[..]).unwrap();
+    /// let inner = writer.into_inner();
+    /// ```
     pub fn into_inner(self) -> W {
         self.0.into_inner()
     }
