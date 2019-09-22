@@ -28,11 +28,13 @@ impl<T> Cursor<T> {
         }
     }
 
+    #[cfg(feature = "redshirt2")]
     #[inline]
     pub(crate) const fn offset(&self) -> u64 {
         self.offset
     }
 
+    #[cfg(feature = "redshirt2")]
     #[inline]
     pub(crate) fn inner_mut(&mut self) -> &mut T {
         &mut self.inner

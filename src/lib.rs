@@ -107,6 +107,7 @@ macro_rules! array {
     };
 }
 
+#[cfg(any(feature = "redshirt1", feature = "redshirt2"))]
 #[inline]
 pub(crate) fn xor_bytes(bytes: &mut [u8]) {
     for n in bytes {
