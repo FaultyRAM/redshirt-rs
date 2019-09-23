@@ -178,6 +178,7 @@ impl<W: Seek + Write> Writer<W> {
     /// let mut data = [u8::default(); 30];
     /// let writer = Writer::new(Cursor::new(&mut data[..])).unwrap();
     /// let inner = writer.into_inner().unwrap();
+    /// ```
     pub fn into_inner(mut self) -> Result<W, Error> {
         self.write_digest().map(Option::unwrap)
     }
