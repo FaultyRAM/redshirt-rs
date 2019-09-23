@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog], and this project adheres to [Semantic
 ## [Unreleased]
 ### Fixed
 - Fixed a formatting error in the documentation for `v2::Writer::into_inner`.
+- Fixed a panic in `v2::Writer::write` if the length of the `&[u8]` to be written is greater than
+  16384 bytes.
 
 ### [0.1.2] - 2019-09-23
 ### Fixed

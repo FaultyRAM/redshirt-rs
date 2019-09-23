@@ -218,14 +218,17 @@ impl<W: Seek + Write> Write for Writer<W> {
     #[inline]
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         let mut buffer = array!(16384);
-        let used = &mut buffer[..buf.len()];
-        used.copy_from_slice(buf);
-        xor_bytes(used);
-        let dst = self.dst.as_mut().unwrap();
-        dst.write_direct(used).map(|len| {
-            self.checksum.update(&used[..len]);
-            len
-        })
+        if let Some(chunk) = buffer.chunks_mut(buf.len()).next() {
+            chunk.copy_from_slice(buf);
+            xor_bytes(chunk);
+            let dst = self.dst.as_mut().unwrap();
+            dst.write_direct(chunk).map(|len| {
+                self.checksum.update(&chunk[..len]);
+                len
+            })
+        } else {
+            Ok(0)
+        }
     }
 
     #[inline]
