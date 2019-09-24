@@ -7,6 +7,7 @@ The format is based on [Keep a Changelog], and this project adheres to [Semantic
 ## [Unreleased]
 ### Changed
 - Refactored `v2::Writer::write` to remove duplicated code.
+- Upgraded to Ubuntu 18.04 LTS ("Bionic Beaver") for Travis CI Linux builds.
 
 ### Fixed
 - Fixed a formatting error in the documentation for `v2::Writer::into_inner`.

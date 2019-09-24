@@ -3,7 +3,7 @@ os:
   - linux
   - osx
   - windows
-dist: xenial
+dist: bionic
 language: rust
 rust:
   - stable
