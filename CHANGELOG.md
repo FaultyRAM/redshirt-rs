@@ -5,6 +5,9 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog], and this project adheres to [Semantic Versioning].
 
 ## [Unreleased]
+### Changed
+- Refactored `v2::Writer::write` to remove duplicated code.
+
 ### Fixed
 - Fixed a formatting error in the documentation for `v2::Writer::into_inner`.
 - Fixed a panic in `v2::Writer::write` if the length of the `&[u8]` to be written is greater than

@@ -9,13 +9,21 @@ use crate::xor_bytes;
 use std::{
     convert::TryFrom,
     io::{self, Read, Seek, SeekFrom, Write},
+    ops::Deref,
 };
+
+const BUFFER_LEN: usize = 16384;
 
 #[derive(Debug)]
 pub(crate) struct Cursor<T> {
     inner: T,
     base: Option<u64>,
     offset: u64,
+}
+
+pub(crate) struct Chunk {
+    bytes: [u8; BUFFER_LEN],
+    len: usize,
 }
 
 impl<T> Cursor<T> {
@@ -48,13 +56,18 @@ impl<T> Cursor<T> {
 
 impl<T: Write> Cursor<T> {
     #[inline]
-    pub(crate) fn write_direct(&mut self, buf: &[u8]) -> io::Result<usize> {
-        match self.inner.write(buf) {
-            Ok(len) => {
+    pub(crate) fn write_chunk(&mut self, buf: &[u8]) -> io::Result<Chunk> {
+        let mut temp = array!(BUFFER_LEN);
+        if let Some(chunk) = buf.chunks(temp.len()).next() {
+            let used = &mut temp[..chunk.len()];
+            used.copy_from_slice(chunk);
+            xor_bytes(used);
+            self.inner.write(used).map(|len| {
                 self.offset += u64::try_from(len).unwrap();
-                Ok(len)
-            }
-            Err(e) => Err(e),
+                Chunk::new(temp, len)
+            })
+        } else {
+            Ok(Chunk::new(temp, 0))
         }
     }
 }
@@ -126,19 +139,34 @@ impl<T: Seek> Seek for Cursor<T> {
 impl<T: Write> Write for Cursor<T> {
     #[inline]
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        let mut temp = array!(16384);
-        if let Some(chunk) = buf.chunks(temp.len()).next() {
-            let used = &mut temp[..chunk.len()];
-            used.copy_from_slice(chunk);
-            xor_bytes(used);
-            self.write_direct(used)
-        } else {
-            Ok(0)
-        }
+        self.write_chunk(buf).map(|chunk| chunk.len())
     }
 
     #[inline]
     fn flush(&mut self) -> io::Result<()> {
         self.inner.flush()
+    }
+}
+
+impl Chunk {
+    #[inline]
+    pub(self) const fn new(bytes: [u8; BUFFER_LEN], len: usize) -> Self {
+        Self { bytes, len }
+    }
+}
+
+impl AsRef<[u8]> for Chunk {
+    #[inline]
+    fn as_ref(&self) -> &[u8] {
+        &self.bytes[..self.len]
+    }
+}
+
+impl Deref for Chunk {
+    type Target = [u8];
+
+    #[inline]
+    fn deref(&self) -> &Self::Target {
+        self.as_ref()
     }
 }

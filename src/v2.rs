@@ -10,7 +10,7 @@
 //! This module provides `Reader` and `Writer` types for reading and writing Redshirt 2-encoded
 //! data, respectively.
 
-use crate::{cursor::Cursor, error::Error, xor_bytes};
+use crate::{cursor::Cursor, error::Error};
 use ring::digest::{Context, SHA1_FOR_LEGACY_USE_ONLY as SHA1, SHA1_OUTPUT_LEN};
 use std::{
     fmt::{self, Debug, Formatter},
@@ -217,18 +217,10 @@ impl<W: Debug + Seek + Write> Debug for Writer<W> {
 impl<W: Seek + Write> Write for Writer<W> {
     #[inline]
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        let mut buffer = array!(16384);
-        if let Some(chunk) = buffer.chunks_mut(buf.len()).next() {
-            chunk.copy_from_slice(buf);
-            xor_bytes(chunk);
-            let dst = self.dst.as_mut().unwrap();
-            dst.write_direct(chunk).map(|len| {
-                self.checksum.update(&chunk[..len]);
-                len
-            })
-        } else {
-            Ok(0)
-        }
+        self.dst.as_mut().unwrap().write_chunk(buf).map(|chunk| {
+            self.checksum.update(&chunk);
+            chunk.len()
+        })
     }
 
     #[inline]
